@@ -17,6 +17,8 @@ try:
     import simplejson as json
 except ImportError:
     import json
+import socket
+socket.setdefaulttimeout(40)    # 40s
 
 def randomstr(n=10):
     seeds = string.lowercase + string.digits
@@ -37,7 +39,8 @@ def timechecksum():
 
 # init logger
 logger = logging.getLogger('BaiduHi')
-logger.setLevel(logging.DEBUG)
+#logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 ch = logging.StreamHandler()
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 formatter = logging.Formatter('%(asctime)s:%(levelname)s (%(name)s) %(message)s',
@@ -118,13 +121,12 @@ class BaiduHi(object):
                 params['verifycode'] = self.getVerifyCode()
             # 似乎第一次登陆总会失败
             params['staticpage'] = 'http://web.im.baidu.com/popup/src/login_jump.htm'
-            print params
-            print urllib.urlencode(params)
+            self.log.debug('Login Params after filling: %s', params)
             req = urllib2.Request('https://passport.baidu.com/api/?login',
                                   data=urllib.urlencode(params))
             html = self._opener.open(req).read()
             url = re.findall(r"encodeURI\('(.*?)'\)", html)[0]
-            self.log.info('Login jump popup url: %s', url)
+            self.log.debug('Login jump popup url: %s', url)
             self._opener.open(url).read()
             # 2次登陆校验
             return self.login(stage=stage+1)
@@ -142,7 +144,7 @@ class BaiduHi(object):
         ret = self._apiReqest('init', method='POST',
                               status='online')
         if ret['result'] == 'ok':
-            print ret['content']['username'], ret['content']['nickname'], ret['content']['avatar']
+            self.log.info('Login ok, username=%s, nick=%s', ret['content']['username'], ret['content']['nickname'])
         # 第一次pick 自己是否登陆成功, ack = 0
         self.pick()
         # 好友分组
@@ -162,9 +164,8 @@ class BaiduHi(object):
         ret = self._apiReqest('pick', type=23, flag=1, ack=self._pickack)
         if ret['result'] != 'ok':
             if ret['result'] == 'kicked':
-                print u'您已经被踢出登陆'
+                self.log.error('kicked by system!')
                 raise SystemExit
-            print 'ERROR!!!!!!!!!!!!!!!!!!!!!!!!!'
             return
         if ret['content']:      # if has content
             # ack 必须传输
@@ -182,19 +183,18 @@ class BaiduHi(object):
                     if c['type'] == 'text':
                         print c['c']
                         msg = getAnswerByQuestion(c['c'], isGroup=False, sender=field['from'])
-                    # {'md5': '5058c18b15e80449483771873d1b4441', 'type'
-                    # : 'img', 't': 'gif', 'n': '9BA5EC29F8'}
+                        break
                     elif c['type'] == 'img':
                         print u'收到图片'
                         print u'图片:', 'http://file.im.baidu.com/get/file/content/old_image/%s?from=page' % c['md5']
                     elif c['type'] == 'face':
                         print u'收到表情'
                         print u'[%s]' % c['n']
-                MESSAGE = u"""<msg><font n="宋体" s="10" b="0" i="1" ul="0" c="0"/><text c="%s"/></msg>""" % msg
+                MESSAGE = u"""<msg><font n="黑体" s="11" b="1" i="0" ul="1" c="86500"/><text c="%s"/></msg>""" % msg
                 self._apiReqest('message', method='POST', extraData={'from': 'fledna'},
                                 messageid=self._seq, to=field['from'], body=MESSAGE)
         elif field['command'] == 'activity':
-            print u'动态消息'
+            print u'动态消息', field
         elif field['command'] == 'friendaddnotify':
             print u'来自别人的好友申请'
             if field['result'] != 'ok':
@@ -211,40 +211,46 @@ class BaiduHi(object):
                                 comment=u'')
 
         elif field['command'] == 'addgroupmembernotify':
-            print u'添加群成员后的通知'
-            print field['content']['managerName'], 'ADD you to gid:', field['content']['gid']
+            #print u'添加群成员后的通知'
+            #{u'content': {u'memberList': [{u'username': u'fledna'}], u'gid': u'1368022', u'managerName': u'andelf', u'time': 1335687504}, u'command': u'addgroupmembernotify', u'result': u'ok'}
+            self.log.info("Added to %s<gid:%s> by %s", field['content']['groupName'], field['content']['gid'], field['content']['managerName'])
         elif field['command'] == 'deletegroupmembernotify':
-            print u'删除群成员后的通知'
+            #print u'删除群成员后的通知'
+            #{u'content': {u'memberList': [{u'username': u'fledna'}], u'groupName': u'Test', u'gid': u'1368022', u'managerName': u'andelf', u'time': 1335687280}, u'command': u'deletegroupmembernotify', u'result': u'ok'}
+            self.log.info("Deleted from %s<gid:%s> by %s", field['content']['groupName'], field['content']['gid'], field['content']['managerName'])
         elif field['command'] == 'groupmessage':
-            print u'群消息'
-            if field['result'] == 'ok':
-                cnt = field['content']
-                print u"%s@%s" % (cnt['from'], cnt['gid']), ':',
-                msg = u'不支持的消息格式'
-                for c in cnt['content']:
-                    if c['type'] == 'text':
-                        print c['c']
-                        msg = getAnswerByQuestion(c['c'], isGroup=True, sender=cnt['from'], gid=cnt['gid'])
+            #print u'群消息'
+            if field['result'] != 'ok':
+                self.log.error('groupmessage error: %s', field)
+                return
+            cnt = field['content']
+            print u"%s@%s" % (cnt['from'], cnt['gid']), ':',
+            msg = u'不支持的消息格式'
+            for c in cnt['content']:
+                if c['type'] == 'text':
+                    print c['c']
+                    msg = getAnswerByQuestion(c['c'], isGroup=True, sender=cnt['from'], gid=cnt['gid'])
                 if msg:         # if send?
                     MESSAGE = u"""<msg><font n="宋体" s="10" b="0" i="1" ul="0" c="0"/><text c="%s"/></msg>""" % msg
                     self._apiReqest('groupmessage', method='POST', extraData={'from': 'fledna'},
                                     messageid=self._seq, gid=cnt['gid'], body=MESSAGE)
         elif field['command'] == 'friendstatus':
-            print u'好友(个人)状态改变'
+            #print u'好友(个人)状态改变'
             if field['result'] == 'ok':
                 cnt = field['content']
-                print cnt['username']
+                #print cnt['username']
                 status_map = dict(online=u'上线了', offline=u'下线', away=u'离开',
                                       busy=u'忙碌', hide=u'隐身')
                 if 'status' in cnt:
-                    # STATUS= "online"|"offline"|"away"|"busy"|"hide"
-                    print status_map[cnt['status']]
+                    # STATUS = "online"|"offline"|"away"|"busy"|"hide"
+                    status = status_map[cnt['status']]
                 if 'webStatus' in cnt:
-                    print u'Web状态', status_map[cnt['webStatus']]
+                    webStatus = u'Web状态', status_map[cnt['webStatus']]
                 if 'personalComment' in cnt:
-                    print u'状态:', cnt['personalComment']
+                    personalComment = u'状态:', cnt['personalComment']
                 if 'nickname' in cnt:
-                    print u'昵称改为:', cnt['nickname']
+                    nickname = u'昵称改为:', cnt['nickname']
+            # TODO
         else:
             print field['command'], 'unhandled'
 
@@ -275,6 +281,15 @@ class BaiduHi(object):
     def addfriend(self, username):
         pass
 
+    def loop(self):
+        while 1:
+            try:
+                self.pick()
+                time.sleep(1)
+            except KeyboardInterrupt:
+                return True     # safe quit
+
+
     def getVerifyCode(self):
         """验证码处理"""
         url = 'https://passport.baidu.com/?verifypic&t=%d' % timestamp()
@@ -299,7 +314,7 @@ class BaiduHi(object):
                 data[key] = ','.join(map(str, list(data[key])))
             if isinstance(data[key], unicode):
                 data[key] = data[key].encode('utf-8')
-        self.log.info('API request `%s`: %s', api, data)
+        self.log.debug('API request `%s`: %s', api, data)
         if method == 'GET':
             query = urllib.urlencode(data)
             url = '%s?%s' % (url, query)
@@ -315,38 +330,16 @@ class BaiduHi(object):
         except:
             # bad json format
             data = eval(raw, type('Dummy', (dict,), dict(__getitem__=lambda s,n:n))())
-        self.log.info('API response `%s`: %s TT=%.2fs', api, data, time.time() - start)
+        self.log.debug('API response `%s`: %s TT=%.2fs', api, data, time.time() - start)
         return data
 
 
 def getAnswerByQuestion(msg, isGroup=False, **params):
-    def isMaRen(msg):
-        keywords = [u'你妹的', u'骚', u'贱', u'不要脸', u'SB', u'傻逼', u'sb',
-                    u'无耻', u'下流', u'卑鄙']
-        for k in keywords:
-            if k in msg:
-                return True
-        return False
-    def isSafeCode(msg):
-        keywords = ['__class__', 'mro(', '__subclasses__', '**']
-        for k in keywords:
-            if k in msg:
-                return False
-        return True
     if u'天王盖地虎' in msg:
         ret = u'宝塔镇河妖'
-    elif isMaRen(msg):
-        import words
-        ret = random.choice(words.maren_sentences)
-    elif msg.startswith('#@fledna') and isSafeCode(msg):
-        code = msg
-        import util
-        ret = util.exec_output(msg)
-        reload(time)
-        ret = u'===== @%s ===== \n%s' % (params['sender'], ret)
 
     elif isGroup:
-        ret = ''
+        ret = '....'
     else:
         ret = u'然后呢?'
     return cgi.escape(ret, quote=True).replace("'", '&#39;')

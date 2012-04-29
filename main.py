@@ -25,7 +25,5 @@ if __name__ == '__main__':
     client.login()
     atexit.register(lambda : client.logout())
     client.init()
-    while 1:
-        client.pick()
-        time.sleep(1)
+    client.loop()
     #queryUser('wangshuyu')

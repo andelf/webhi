@@ -5,6 +5,7 @@
 import os
 import urllib
 import urllib2
+import httplib
 import urlparse
 import logging
 import re
@@ -19,6 +20,7 @@ except ImportError:
     import json
 import socket
 socket.setdefaulttimeout(40)    # 40s
+import msgfmt
 
 def randomstr(n=10):
     seeds = string.lowercase + string.digits
@@ -174,31 +176,60 @@ class BaiduHi(object):
                 self._handlePickField(field)
 
     def _handlePickField(self, field):
+        if field['result'] != 'ok':
+            self.log.error('handlePickFiled error: %s', field)
+            return
         if field['command'] == 'message':
-            print u'普通消息'
-            if field['result'] == 'ok':
-                print field['from'], ':',
-                msg = u'不支持的消息格式'
-                for c in field['content']:
-                    if c['type'] == 'text':
-                        print c['c']
-                        msg = getAnswerByQuestion(c['c'], isGroup=False, sender=field['from'])
-                        break
-                    elif c['type'] == 'img':
-                        print u'收到图片'
-                        print u'图片:', 'http://file.im.baidu.com/get/file/content/old_image/%s?from=page' % c['md5']
-                    elif c['type'] == 'face':
-                        print u'收到表情'
-                        print u'[%s]' % c['n']
-                MESSAGE = u"""<msg><font n="黑体" s="11" b="1" i="0" ul="1" c="86500"/><text c="%s"/></msg>""" % msg
-                self._apiReqest('message', method='POST', extraData={'from': 'fledna'},
-                                messageid=self._seq, to=field['from'], body=MESSAGE)
+            sender = field['from']
+            cnt = field['content']
+            income = msgfmt.parserJsonMessage(cnt)
+            #print u'[普通消息]',
+            #print field
+            #print field['from'], ':',
+            #print income
+            self.log.info('Message from %s: %s', sender, income)
+            reply = getAnswerByQuestion(income, isGroup=False, sender=field['from']) or None
+            # 0xff0000 -> blue
+            # 0x00ff00 -> green
+            # 0x0000ff -> red
+            if reply is None:
+                return
+            self.log.info('Message reply %s: %s', sender, reply)
+            msg = msgfmt.Message(fontname=u'黑体', bold=True, size=12, color=0x6B4C3F)
+            msg.text(reply)
+            self._apiReqest('message', method='POST', extraData={'from': self.username},
+                            messageid=self._seq, to=field['from'], body=msg.toString())
+            #u'图片:', 'http://file.im.baidu.com/get/file/content/old_image/%s?from=page' % c['md5']
+            #MESSAGE = u"""<msg><font n="黑体" s="11" b="1" i="0" ul="1" c="16711680"/><text c="%s"/>%s</msg>""" % (msg, msgfmt.img('./pic.png'))
+
+        elif field['command'] == 'groupmessage':
+            # group msg has a {content: {content: {}}} structure
+            cnt = field['content']
+            sender = cnt['from']
+            gid = cnt['gid']
+            income = msgfmt.parserJsonMessage(cnt['content'])
+            self.log.info('Group message from %s@%s: %s', sender, gid, income)
+            #print u'[群消息]',
+            #print u"%s@%s" % (cnt['from'], cnt['gid']), ':',
+            #print income
+            reply = getAnswerByQuestion(income, isGroup=True, sender=cnt['from'], gid=cnt['gid']) or None
+            if reply is None:
+                return
+            self.log.info('Group message reply %s@%s: %s', sender, gid, reply)
+            msg = msgfmt.Message(fontname=u'幼圆', size=12, color=0xEE9640)
+            msg.reply(cnt['from'], income)
+            msg.text('\n')
+            msg.text(reply)
+            #msg.img('./vsop.jpg')
+            msg.md5img('31A8743ADC827555A0A554EAB8EC0B9A', 'jpg')
+
+            self._apiReqest('groupmessage', method='POST', extraData={'from': self.username},
+                                  messageid=self._seq, gid=cnt['gid'], body=msg.toString())
+            
         elif field['command'] == 'activity':
             print u'动态消息', field
         elif field['command'] == 'friendaddnotify':
             print u'来自别人的好友申请'
-            if field['result'] != 'ok':
-                return
             cnt = field['content']
             print cnt['username'], u'添加好友, 验证消息:', cnt['comment']
             if u'宝塔镇河妖' not in cnt['comment']: # 验证 fail
@@ -213,27 +244,11 @@ class BaiduHi(object):
         elif field['command'] == 'addgroupmembernotify':
             #print u'添加群成员后的通知'
             #{u'content': {u'memberList': [{u'username': u'fledna'}], u'gid': u'1368022', u'managerName': u'andelf', u'time': 1335687504}, u'command': u'addgroupmembernotify', u'result': u'ok'}
-            self.log.info("Added to %s<gid:%s> by %s", field['content']['groupName'], field['content']['gid'], field['content']['managerName'])
+            self.log.info("Added to <gid:%s> by %s", field['content']['gid'], field['content']['managerName'])
         elif field['command'] == 'deletegroupmembernotify':
             #print u'删除群成员后的通知'
             #{u'content': {u'memberList': [{u'username': u'fledna'}], u'groupName': u'Test', u'gid': u'1368022', u'managerName': u'andelf', u'time': 1335687280}, u'command': u'deletegroupmembernotify', u'result': u'ok'}
             self.log.info("Deleted from %s<gid:%s> by %s", field['content']['groupName'], field['content']['gid'], field['content']['managerName'])
-        elif field['command'] == 'groupmessage':
-            #print u'群消息'
-            if field['result'] != 'ok':
-                self.log.error('groupmessage error: %s', field)
-                return
-            cnt = field['content']
-            print u"%s@%s" % (cnt['from'], cnt['gid']), ':',
-            msg = u'不支持的消息格式'
-            for c in cnt['content']:
-                if c['type'] == 'text':
-                    print c['c']
-                    msg = getAnswerByQuestion(c['c'], isGroup=True, sender=cnt['from'], gid=cnt['gid'])
-                if msg:         # if send?
-                    MESSAGE = u"""<msg><font n="宋体" s="10" b="0" i="1" ul="0" c="0"/><text c="%s"/></msg>""" % msg
-                    self._apiReqest('groupmessage', method='POST', extraData={'from': 'fledna'},
-                                    messageid=self._seq, gid=cnt['gid'], body=MESSAGE)
         elif field['command'] == 'friendstatus':
             #print u'好友(个人)状态改变'
             if field['result'] == 'ok':
@@ -255,7 +270,11 @@ class BaiduHi(object):
             print field['command'], 'unhandled'
 
     def logout(self):
-        return self._apiReqest('logout')['result'] == 'ok'
+        try:
+            return self._apiReqest('logout')['result'] == 'ok'
+        except urllib2.URLError, e:
+            self.log.fatal('logout error: str(e)')
+            return False
 
     def queryinfo(self, username):
         ret = self._apiReqest('queryinfo', username=username,
@@ -282,12 +301,15 @@ class BaiduHi(object):
         pass
 
     def loop(self):
-        while 1:
+        while True:
             try:
                 self.pick()
                 time.sleep(1)
             except KeyboardInterrupt:
+                self.log.info('interrupted by keyboard!')
                 return True     # safe quit
+            except httplib.HTTPException, e:
+                self.log.info('http exception: %s', e)
 
 
     def getVerifyCode(self):
@@ -337,9 +359,8 @@ class BaiduHi(object):
 def getAnswerByQuestion(msg, isGroup=False, **params):
     if u'天王盖地虎' in msg:
         ret = u'宝塔镇河妖'
-
     elif isGroup:
-        ret = '....'
+        ret = u'...., 测试机器人'
     else:
         ret = u'然后呢?'
     return cgi.escape(ret, quote=True).replace("'", '&#39;')
@@ -348,4 +369,10 @@ def getAnswerByQuestion(msg, isGroup=False, **params):
 
 # 表情获取
 # http://file.im.baidu.com/get/file/content/old_image/5058c18b15e80449483771873d1b4441?from=page&rnd=16oi67o5b
-#http://file.im.baidu.com/get/file/content/old_image/5058c18b15e80449483771873d1b4441?from=page
+#http://file.im.baidu.com/get/file/content/old_image/9180AAE4712AD6228C1B9ACA492117E1?from=page
+# 文件:
+#http://file.im.baidu.com/crossdomain.xml
+#Referer:http://web.im.baidu.com/resources/common/flashes/upload_pic.swf
+
+#http://file.im.baidu.com/get/file/content/old_image/2e7c9e476a849eb1c8d2bfed3a20ef52?from=page&rnd=16ruke6ro&callback=bd__cbs__vqmud5
+#<msg><font n="宋体" s="10" b="0" i="0" ul="0" c="0"/><img n="9BA5EC29F8" md5="2e7c9e476a849eb1c8d2bfed3a20ef52" t="png"/></msg>

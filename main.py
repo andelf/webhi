@@ -13,6 +13,26 @@ import sys
 import argparse
 import atexit
 import time
+import threading
+
+
+class HiThread(threading.Thread):
+    name = "baiduhi"
+    daemon = False
+    client = None
+
+    def run(self, *args, **kwargs):
+        client = self.client
+        if client is None:
+            raise RuntimeError('no client yet')
+        if client.login():
+            atexit.register(lambda : client.logout())
+            client.init()
+            client.loop()
+        else:
+            raise RuntimeError('login error')
+
+
 
 if __name__ == '__main__':
     parser = parser = argparse.ArgumentParser(description='`fledna` is a baidu-hi robot using web-hi protocol.')
@@ -20,10 +40,8 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--password', help='baidu hi password', required=True)
 
     args = parser.parse_args()
-
     client = lib.BaiduHi(args.username, args.password)
-    client.login()
-    atexit.register(lambda : client.logout())
-    client.init()
-    client.loop()
-    #queryUser('wangshuyu')
+    
+    hi = HiThread()
+    hi.client = client
+    hi.start()

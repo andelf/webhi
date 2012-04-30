@@ -22,6 +22,7 @@ import socket
 socket.setdefaulttimeout(40)    # 40s
 import msgfmt
 
+
 def randomstr(n=10):
     seeds = string.lowercase + string.digits
     return ''.join(random.sample(seeds, n))
@@ -267,16 +268,16 @@ class BaiduHi(object):
             if 'status' in cnt:
                 # STATUS = "online"|"offline"|"away"|"busy"|"hide"
                 status = status_map[cnt['status']]
-                self.log.info('Status changed: <uid:%s> %s', username, status)
+                self.log.info('Status changed <uid:%s>: %s', username, status)
             if 'webStatus' in cnt:
                 webStatus = u'Web状态', status_map[cnt['webStatus']]
                 # web status changes too often.
             if 'personalComment' in cnt:
                 personalComment = cnt['personalComment'].strip()
-                self.log.info('Personal Comment changed: <uid:%s> %s', username, personalComment)
+                self.log.info('Personal Comment changed <uid:%s>: %s', username, personalComment)
             if 'nickname' in cnt:
                 nickname = cnt['nickname']
-                self.log.info('Nickname changed: <uid:%s> %s', username, nickname)
+                self.log.info('Nickname changed <uid:%s>: %s', username, nickname)
             # TODO
         elif field['command'] == 'friendinfonotify':
             cnt = field['content']
@@ -308,7 +309,7 @@ class BaiduHi(object):
         with open('./pic.jpg', 'wb') as fp:
             fp.write(data)
             self.log.info('Verify code pic download ok! `./pic.jpg`')
-        code = raw_input('plz input code:').strip()
+        code = 'abcd' # raw_input('plz input code:').strip()
         return ','.join([vdata['v_url'], vdata['v_period'], vdata['v_time'], code])
 
     def queryInfo(self, username):
@@ -403,8 +404,7 @@ class BaiduHi(object):
                 self.log.info('interrupted by keyboard!')
                 return True     # safe quit
             except httplib.HTTPException, e:
-                self.log.info('http exception: %s', e)
-
+                self.log.error('http exception: %s', e)
 
 def getAnswerByQuestion(msg, isGroup=False, **params):
     if u'天王盖地虎' in msg:
@@ -424,5 +424,4 @@ def getAnswerByQuestion(msg, isGroup=False, **params):
 #http://file.im.baidu.com/crossdomain.xml
 #Referer:http://web.im.baidu.com/resources/common/flashes/upload_pic.swf
 
-#http://file.im.baidu.com/get/file/content/old_image/2e7c9e476a849eb1c8d2bfed3a20ef52?from=page&rnd=16ruke6ro&callback=bd__cbs__vqmud5
-#<msg><font n="宋体" s="10" b="0" i="0" ul="0" c="0"/><img n="9BA5EC29F8" md5="2e7c9e476a849eb1c8d2bfed3a20ef52" t="png"/></msg>
+#client._apiReqest('modifyself', comment='Under Robot Mode.')        

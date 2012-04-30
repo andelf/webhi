@@ -146,7 +146,7 @@ class BaiduHi(object):
         ret = self._apiReqest('init', method='POST',
                               status='online')
         if ret['result'] == 'ok':
-            self.log.info('Login ok, username=%s, nick=%s', ret['content']['username'], ret['content']['nickname'])
+            self.log.info('Login ok: username=%s, nick=%s', ret['content']['username'], ret['content']['nickname'])
         # 第一次pick 自己是否登陆成功, ack = 0
         self.pick()
         # 好友分组
@@ -182,7 +182,7 @@ class BaiduHi(object):
         if field['command'] == 'message':
             sender = field['from']
             cnt = field['content']
-            income = msgfmt.parserJsonMessage(cnt)
+            income = msgfmt.parserJsonMessage(cnt).strip()
             #print u'[普通消息]',
             #print field
             #print field['from'], ':',
@@ -207,7 +207,7 @@ class BaiduHi(object):
             cnt = field['content']
             sender = cnt['from']
             gid = cnt['gid']
-            income = msgfmt.parserJsonMessage(cnt['content'])
+            income = msgfmt.parserJsonMessage(cnt['content']).strip()
             self.log.info('Group message from %s@%s: %s', sender, gid, income)
             #print u'[群消息]',
             #print u"%s@%s" % (cnt['from'], cnt['gid']), ':',
@@ -221,25 +221,33 @@ class BaiduHi(object):
             msg.text('\n')
             msg.text(reply)
             #msg.img('./vsop.jpg')
-            msg.md5img('31A8743ADC827555A0A554EAB8EC0B9A', 'jpg')
-
+            msg.md5img('0D01966D3517836037E24B74C44304C7', 'jpg')
             self._apiReqest('groupmessage', method='POST', extraData={'from': self.username},
                                   messageid=self._seq, gid=cnt['gid'], body=msg.toString())
             
         elif field['command'] == 'activity':
             print u'动态消息', field
         elif field['command'] == 'friendaddnotify':
-            print u'来自别人的好友申请'
+            #print u'来自别人的好友申请'
+            # print cnt['username'], u'添加好友, 验证消息:', cnt['comment']
             cnt = field['content']
-            print cnt['username'], u'添加好友, 验证消息:', cnt['comment']
-            if u'宝塔镇河妖' not in cnt['comment']: # 验证 fail
+            username = cnt['username']
+            comment = cnt['comment'].strip()
+            self.log.info('Friendship apply from <uid:%s>: %s', username, comment)
+            if u'宝塔镇河妖' not in comment: # 验证 fail
+                cmt = u'天王盖地虎?'
+                #self.deleteFriend(username)
+                self.log.info('Friendship apply rejected <uid:%s>: %s', username, cmt)
                 self._apiReqest('verifyfriend', method='POST',
-                                username=cnt['username'], agreen=0,
-                                comment=u'天王盖地虎?')
+                                username=username, agreen=0,
+                                comment=cmt)
             else:
+                cmt = u'接受'
+                self.log.info('Friendship apply accepted <uid:%s>: %s', username, cmt)
                 self._apiReqest('verifyfriend', method='POST',
-                                username=cnt['username'], agree=1,
-                                comment=u'')
+                                username=username, agree=1,
+                                comment=cmt)
+                self.addFriend(cnt['username'])
 
         elif field['command'] == 'addgroupmembernotify':
             #print u'添加群成员后的通知'
@@ -251,23 +259,31 @@ class BaiduHi(object):
             self.log.info("Deleted from %s<gid:%s> by %s", field['content']['groupName'], field['content']['gid'], field['content']['managerName'])
         elif field['command'] == 'friendstatus':
             #print u'好友(个人)状态改变'
-            if field['result'] == 'ok':
-                cnt = field['content']
-                #print cnt['username']
-                status_map = dict(online=u'上线了', offline=u'下线', away=u'离开',
-                                      busy=u'忙碌', hide=u'隐身')
-                if 'status' in cnt:
-                    # STATUS = "online"|"offline"|"away"|"busy"|"hide"
-                    status = status_map[cnt['status']]
-                if 'webStatus' in cnt:
-                    webStatus = u'Web状态', status_map[cnt['webStatus']]
-                if 'personalComment' in cnt:
-                    personalComment = u'状态:', cnt['personalComment']
-                if 'nickname' in cnt:
-                    nickname = u'昵称改为:', cnt['nickname']
+            #print field
+            cnt = field['content']
+            username = cnt['username']
+            status_map = dict(online=u'上线了', offline=u'下线', away=u'离开',
+                              busy=u'忙碌', hide=u'隐身')
+            if 'status' in cnt:
+                # STATUS = "online"|"offline"|"away"|"busy"|"hide"
+                status = status_map[cnt['status']]
+                self.log.info('Status changed: <uid:%s> %s', username, status)
+            if 'webStatus' in cnt:
+                webStatus = u'Web状态', status_map[cnt['webStatus']]
+                # web status changes too often.
+            if 'personalComment' in cnt:
+                personalComment = cnt['personalComment'].strip()
+                self.log.info('Personal Comment changed: <uid:%s> %s', username, personalComment)
+            if 'nickname' in cnt:
+                nickname = cnt['nickname']
+                self.log.info('Nickname changed: <uid:%s> %s', username, nickname)
             # TODO
+        elif field['command'] == 'friendinfonotify':
+            cnt = field['content']
+            self.log.info('Friend info notify %s', cnt)
         else:
             print field['command'], 'unhandled'
+            print field
 
     def logout(self):
         try:
@@ -276,41 +292,64 @@ class BaiduHi(object):
             self.log.fatal('logout error: str(e)')
             return False
 
-    def queryinfo(self, username):
-        ret = self._apiReqest('queryinfo', username=username,
-                              field='relationship,username,showname,showtype,status')
-        if ret['result'] == 'ok':
-            return ret['content']['fields']
-
-
     def verifycode(self, type, **params):
         ret = self._apiReqest('verifycode', type=type, **params)
-        validate = ret['content']['validate']
+        vdata = ret['content']['validate']
 
+        if vdata.get('v_code', None):
+            return ','.join([vdata['v_url'], vdata['v_period'], vdata['v_time'], vdata['v_code']])
+        else:
+            self.log.error('Verifycode not implemented! type=%s, args=%s', type, params)
+            return None
         # return validate
         imgurl = 'http://vcode.im.baidu.com/cgi-bin/genimg?%s&_time=%s' % \
-            (validate['v_url'], timechecksum())
+            (vdata['v_url'], timechecksum())
         data = self._opener.open(imgurl).read()
         with open('./pic.jpg', 'wb') as fp:
             fp.write(data)
             self.log.info('Verify code pic download ok! `./pic.jpg`')
         code = raw_input('plz input code:').strip()
-        return '%s,%s,%s' % (validate['v_url'], validate['v_time'], code)
+        return ','.join([vdata['v_url'], vdata['v_period'], vdata['v_time'], code])
 
-    def addfriend(self, username):
-        pass
+    def queryInfo(self, username):
+        ret = self._apiReqest('queryinfo', username=username,
+                              field='relationship,username,showname,showtype,status')
+        if ret['result'] == 'ok':
+            return ret['content']['fields']
+        return None
 
-    def loop(self):
-        while True:
-            try:
-                self.pick()
-                time.sleep(1)
-            except KeyboardInterrupt:
-                self.log.info('interrupted by keyboard!')
-                return True     # safe quit
-            except httplib.HTTPException, e:
-                self.log.info('http exception: %s', e)
+    def addFriend(self, username, tid=0, comment=u'回加'):
+        users = self.queryInfo(username)
+        if users is None:
+            self.log.error('Add friend <uid:%s> failed: aquire userinfo fail', username)
+            return False
+        info = users[0]
+        #if info['relationship'] != 2:
+        #    self.log.error('Add friend <uid:%s> failed: relationship != 2', username)
+        #    return False
+        validate = self.verifycode(type='addfriend', username=username)
+        ret = self._apiReqest('addfriend', username=username, tid=tid, comment=comment, validate=validate)
+        if ret['result'] == 'ok':
+            return True
+        else:
+            self.log.error('Add friend <uid:%s> failed: %s', username, ret)
+        return False
 
+    def deleteFriend(self, username):
+        validate = self.verifycode(type='deletefriend', username=username)
+        ret = self._apiReqest('deletefriend', username=username, validate=validate)
+        if ret['result'] == 'ok':
+            #print ret
+            return True
+        else:
+            self.log.error('Delete friend <uid:%s> failed: %s', username, ret)
+        return False
+        
+        
+            
+            
+        
+        
 
     def getVerifyCode(self):
         """验证码处理"""
@@ -355,12 +394,23 @@ class BaiduHi(object):
         self.log.debug('API response `%s`: %s TT=%.2fs', api, data, time.time() - start)
         return data
 
+    def loop(self):
+        while True:
+            try:
+                self.pick()
+                time.sleep(1)
+            except KeyboardInterrupt:
+                self.log.info('interrupted by keyboard!')
+                return True     # safe quit
+            except httplib.HTTPException, e:
+                self.log.info('http exception: %s', e)
+
 
 def getAnswerByQuestion(msg, isGroup=False, **params):
     if u'天王盖地虎' in msg:
         ret = u'宝塔镇河妖'
     elif isGroup:
-        ret = u'...., 测试机器人'
+        ret = u'测试机器人自动回复.'
     else:
         ret = u'然后呢?'
     return cgi.escape(ret, quote=True).replace("'", '&#39;')

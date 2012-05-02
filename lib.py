@@ -8,6 +8,7 @@ import urllib2
 import httplib
 import urlparse
 import logging
+import logging.handlers
 import re
 import cookielib
 import time
@@ -44,12 +45,17 @@ def timechecksum():
 logger = logging.getLogger('BaiduHi')
 #logger.setLevel(logging.DEBUG)
 logger.setLevel(logging.INFO)
-ch = logging.StreamHandler()
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 formatter = logging.Formatter('%(asctime)s:%(levelname)s (%(name)s) %(message)s',
                               datefmt='%Y-%m-%d %H:%M:%S')
+
+ch = logging.StreamHandler()
 ch.setFormatter(formatter)
 logger.addHandler(ch)
+
+fh = logging.handlers.WatchedFileHandler('./baiduhi.log', encoding='gb18030')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
 
 __cookies__ = os.path.join(os.path.dirname(__file__), 'cookies.txt')
 
@@ -161,6 +167,7 @@ class BaiduHi(object):
         # 好友分组列出
         #self._apiReqest('getmultifriendlist', data=commondata, seq=self.seq,
         #                tid=0, page=0, field='relationship,username,showname,showtype,status')
+        return True
 
     def pick(self):
         """main callback func"""
@@ -181,27 +188,17 @@ class BaiduHi(object):
             self.log.error('handlePickFiled error: %s', field)
             return
         if field['command'] == 'message':
+            # 普通消息
             sender = field['from']
             cnt = field['content']
             income = msgfmt.parserJsonMessage(cnt).strip()
-            #print u'[普通消息]',
-            #print field
-            #print field['from'], ':',
-            #print income
-            self.log.info('Message from %s: %s', sender, income)
-            reply = getAnswerByQuestion(income, isGroup=False, sender=field['from']) or None
-            # 0xff0000 -> blue
-            # 0x00ff00 -> green
-            # 0x0000ff -> red
+            self.log.info('Message from <uid:%s>: %s', sender, income)
+            reply = getAnswerByQuestion(income, sender=field['from']) or None
             if reply is None:
                 return
-            self.log.info('Message reply %s: %s', sender, reply)
-            msg = msgfmt.Message(fontname=u'黑体', bold=True, size=12, color=0x6B4C3F)
-            msg.text(reply)
+            self.log.info('Message reply <uid:%s>: %s', sender, reply.rawString())
             self._apiReqest('message', method='POST', extraData={'from': self.username},
-                            messageid=self._seq, to=field['from'], body=msg.toString())
-            #u'图片:', 'http://file.im.baidu.com/get/file/content/old_image/%s?from=page' % c['md5']
-            #MESSAGE = u"""<msg><font n="黑体" s="11" b="1" i="0" ul="1" c="16711680"/><text c="%s"/>%s</msg>""" % (msg, msgfmt.img('./pic.png'))
+                            messageid=self._seq, to=field['from'], body=unicode(reply))
 
         elif field['command'] == 'groupmessage':
             # group msg has a {content: {content: {}}} structure
@@ -210,21 +207,12 @@ class BaiduHi(object):
             gid = cnt['gid']
             income = msgfmt.parserJsonMessage(cnt['content']).strip()
             self.log.info('Group message from %s@%s: %s', sender, gid, income)
-            #print u'[群消息]',
-            #print u"%s@%s" % (cnt['from'], cnt['gid']), ':',
-            #print income
-            reply = getAnswerByQuestion(income, isGroup=True, sender=cnt['from'], gid=cnt['gid']) or None
+            reply = getAnswerByQuestion(income, sender=cnt['from'], gid=cnt['gid']) or None
             if reply is None:
                 return
-            self.log.info('Group message reply %s@%s: %s', sender, gid, reply)
-            msg = msgfmt.Message(fontname=u'幼圆', size=12, color=0xEE9640)
-            msg.reply(cnt['from'], income)
-            msg.text('\n')
-            msg.text(reply)
-            #msg.img('./vsop.jpg')
-            msg.md5img('0D01966D3517836037E24B74C44304C7', 'jpg')
+            self.log.info('Group message reply %s@%s: %s', sender, gid, reply.rawString())
             self._apiReqest('groupmessage', method='POST', extraData={'from': self.username},
-                                  messageid=self._seq, gid=cnt['gid'], body=msg.toString())
+                                  messageid=self._seq, gid=cnt['gid'], body=unicode(reply))
             
         elif field['command'] == 'activity':
             print u'动态消息', field
@@ -345,12 +333,6 @@ class BaiduHi(object):
         else:
             self.log.error('Delete friend <uid:%s> failed: %s', username, ret)
         return False
-        
-        
-            
-            
-        
-        
 
     def getVerifyCode(self):
         """验证码处理"""
@@ -395,25 +377,40 @@ class BaiduHi(object):
         self.log.debug('API response `%s`: %s TT=%.2fs', api, data, time.time() - start)
         return data
 
-    def loop(self):
-        while True:
-            try:
-                self.pick()
-                time.sleep(1)
-            except KeyboardInterrupt:
-                self.log.info('interrupted by keyboard!')
-                return True     # safe quit
-            except httplib.HTTPException, e:
-                self.log.error('http exception: %s', e)
+    def tick(self):
+        try:
+            self.pick()
+        except httplib.HTTPException, e:
+            self.log.error('http exception: %s', e)
+        time.sleep(1)
 
-def getAnswerByQuestion(msg, isGroup=False, **params):
-    if u'天王盖地虎' in msg:
+
+            # # 0xff0000 -> blue
+            # # 0x00ff00 -> green
+            # # 0x0000ff -> red
+            # if reply is None:
+            #     return
+            # self.log.info('Message reply <uid:%s>: %s', sender, reply)
+            # msg = msgfmt.Message(fontname=u'黑体', bold=True, size=12, color=0x6B4C3F)
+            # msg.text(reply)
+
+def getAnswerByQuestion(income, sender, gid=None):
+    msg = msgfmt.Message(fontname=u'幼圆', bold=True, size=12, color=0x6B4C3F)
+    
+    if u'天王盖地虎' in income:
         ret = u'宝塔镇河妖'
-    elif isGroup:
+    elif gid:
+        msg.reply(sender, income)
+        msg.text('\n')
         ret = u'测试机器人自动回复.'
     else:
         ret = u'然后呢?'
-    return cgi.escape(ret, quote=True).replace("'", '&#39;')
+
+    
+    msg.text(ret)
+    #kmsg.md5img('0D01966D3517836037E24B74C44304C7', 'jpg')
+
+    return msg
 
 
 

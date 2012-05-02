@@ -4,6 +4,7 @@
 import os
 import base64
 import hashlib
+import cgi
 
 # <msg><font n="宋体" s="10" b="0" i="0" ul="0" c="0"/><text c="sdfasdffda"/><face n="撇嘴"/><text c="asdfsfd"/></msg>
 # <msg><font n="宋体" s="10" b="0" i="0" ul="0" c="0"/><text c=""/><face n="囧"/><text c=""/></msg>
@@ -15,6 +16,10 @@ import hashlib
 # t=2 引用
 # t=其他, 无标签
 # {u'n': u'b804396205', u'type': u'cface', u't': u'jpg', u'md5': u'b80439620592368b0874e7a7b3442059'}
+
+def escape(content):
+    return cgi.escape(content, quote=True).replace("'", '&#39;')
+
 def font(name, size=10, color=0x000000, bold=False, italic=False, underline=False):
     # 0xff0000 -> blue
     # 0x00ff00 -> green
@@ -23,7 +28,7 @@ def font(name, size=10, color=0x000000, bold=False, italic=False, underline=Fals
         name, size, bold, italic, underline, color)
 
 def text(content=u''):
-    return u'<text c="%s"/>' % content
+    return u'<text c="%s"/>' % escape(content)
 
 def face(name=u'睡'):
     return u'<face n="%s"/>' % name
@@ -36,7 +41,7 @@ def url(ref='http://www.baidu.com'):
     return u'<url ref="%s"/>' % ref
 
 def reply(name, content=u'', type=1):
-    return u'<reply t="%s" n="%s" c="%s"/>' % (type, name, content)
+    return u'<reply t="%s" n="%s" c="%s"/>' % (type, name, escape(content))
 
 def quote(name, content=u''):
     return reply(name, content, type=2)
@@ -61,21 +66,33 @@ class Message(object):
         self._raw_lines = []
         self._raw_lines.append(font(fontname, size, color, bold, italic, underline))
 
-        self.text = lambda *args, **kwargs: self._raw_lines.append(text(*args, **kwargs))
-        self.face = lambda *args, **kwargs: self._raw_lines.append(face(*args, **kwargs))
+        self._text_lines = []
+
+        self.text = lambda t: (self._raw_lines.append(text(t)),
+                               self._text_lines.append(t))
+        self.face = lambda n: (self._raw_lines.append(face(n)),
+                               self._text_lines.append('[%s]' % n))
         self.cface = lambda *args, **kwargs: self._raw_lines.append(cface(*args, **kwargs))
-        self.url = lambda *args, **kwargs: self._raw_lines.append(url(*args, **kwargs))
+        self.url = lambda u: (self._raw_lines.append(url(u)),
+                              self._text_lines.append(u))
         self.reply = lambda *args, **kwargs: self._raw_lines.append(reply(*args, **kwargs))
         self.quote = lambda *args, **kwargs: self._raw_lines.append(quote(*args, **kwargs))
         self.img = lambda *args, **kwargs: self._raw_lines.append(img(*args, **kwargs))
         self.md5img = lambda *args, **kwargs: self._raw_lines.append(md5img(*args, **kwargs))
 
     def toString(self):
-        return u'<msg>%s</msg>' % (''.join(self._raw_lines)) 
+        return u'<msg>%s</msg>' % (''.join(self._raw_lines))
+
+    def __unicode__(self):
+        return self.toString()
+
+    def rawString(self):
+        return u' '.join(self._text_lines)
+                              
 
 def parserJsonMessage(jsondata):
     #{ "type": "img" },
-    #{ "type": "reply", "t":"1", "n":"#nickname<username>#", "c":"#quote-content#"}]"""
+    #{ "type": "reply", "t":"1", "n":"nickname", "c":"content"}]"""
     raw_lines = []
     for item in jsondata:
         if item['type'] == 'text':

@@ -52,12 +52,15 @@ if __name__ == '__main__':
     client.init()
     hi = HiThread()
     hi.client = client
+    hi.client._apiReqest('modifyself', comment=u'IM 机器人服务中.')
     hi.start()
-    while True:
+    while 1:
         try:
             hi.join(5.0)
         except KeyboardInterrupt:
             hi.quit()
+            hi.client._apiReqest('modifyself', comment=u'IM 机器人已离线.')
+            # hi.logout()
             sys.exit(0)
             raise SystemExit
         

@@ -100,7 +100,14 @@ def parserJsonMessage(jsondata):
         elif item['type'] == 'url':
             raw_lines.append(item['ref'])
         elif item['type'] == 'reply':
-            raw_lines.append(u'@%s' % item['n'])
+            # print 'DEBUG', item
+            # strip username from nickname
+            nickname = item['n']
+            if nickname.endswith('>') and '<' in nickname:
+                username = nickname[:-1][nickname.rfind('<')+1:]
+            else:
+                username = nickname
+            raw_lines.append(u'@%s' % username)
         elif item['type'].endswith('face'):
             raw_lines.append(u'[%s]' % item['n'])
     return u' '.join(raw_lines)

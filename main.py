@@ -5,7 +5,7 @@
 #  Created     : Fri Apr 13 21:04:22 2012 by Feather.et.ELF
 #  Copyright   : Feather Workshop (c) 2012
 #  Description : Baidu hi client
-#  Time-stamp: <2012-04-13 21:04:30 andelf>
+#  Time-stamp: <2012-05-10 21:00:10 andelf>
 
 
 import lib
@@ -29,12 +29,12 @@ class HiThread(threading.Thread):
 
         while self.running_flag:
             client.tick()
-        
+
     def quit(self):
         """safe quit"""
         self.running_flag = False
         self.client.log.info("Got quit signal. Waiting for current call...")
-        
+
 
 if __name__ == '__main__':
     parser = parser = argparse.ArgumentParser(description='`fledna` is a baidu-hi robot using web-hi protocol.')
@@ -47,20 +47,29 @@ if __name__ == '__main__':
 
     if not client.login():      # if login fail
         raise RuntimeError('Login fail!')
-    
+
     atexit.register(lambda : client.logout())
     client.init()
     hi = HiThread()
     hi.client = client
     hi.client._apiReqest('modifyself', comment=u'IM 机器人服务中.')
+
     hi.start()
+    #import msgfmt
+    #def cb(txt):
+    #    msg = msgfmt.Message()
+    #    msg.text(txt)
+    #    client.sendGroupMessage(1371380, msg)
+
+    #sys.path.append('../baidu')
+    #import deploy_monitor
+    #deploy_monitor.dp.loop(10, callback=cb)
+
     while 1:
         try:
-            hi.join(5.0)
+           hi.join(5.0)
         except KeyboardInterrupt:
-            hi.quit()
-            hi.client._apiReqest('modifyself', comment=u'IM 机器人已离线.')
-            # hi.logout()
-            sys.exit(0)
-            raise SystemExit
-        
+           hi.quit()
+           hi.client._apiReqest('modifyself', comment=u'IM 机器人已离线.')
+           sys.exit(0)
+           raise SystemExit

@@ -38,7 +38,8 @@ def cface(md5, type='jpg'):
     return u' <cface md5="%s" t="%s" n="%s"/>' % (md5, type, md5[:10])
 
 def url(ref='http://www.baidu.com'):
-    return u'<url ref="%s"/>' % ref
+    # must handle '&'
+    return u'<url ref="%s"/>' % ref.replace('&', '&amp;')
 
 def reply(name, content=u'', type=1):
     return u'<reply t="%s" n="%s" c="%s"/>' % (type, name, escape(content))
@@ -58,7 +59,7 @@ def img(fpath):
 def md5img(md5, type='jpg'):
     # msg.md5img('31A8743ADC827555A0A554EAB8EC0B9A', 'jpg')
     return u'<img md5="%s" t="%s" n="%s"></img>' % (md5, type, md5[:10])
-    
+
 
 class Message(object):
     """Wrapper for xml-msg format"""
@@ -88,7 +89,7 @@ class Message(object):
 
     def rawString(self):
         return u' '.join(self._text_lines)
-                              
+
 
 def parserJsonMessage(jsondata):
     #{ "type": "img" },
@@ -111,5 +112,3 @@ def parserJsonMessage(jsondata):
         elif item['type'].endswith('face'):
             raw_lines.append(u'[%s]' % item['n'])
     return u' '.join(raw_lines)
-        
-

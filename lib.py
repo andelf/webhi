@@ -59,6 +59,27 @@ logger.addHandler(fh)
 
 __cookies__ = os.path.join(os.path.dirname(__file__), 'cookies.txt')
 
+__default_answer_map__ = {
+    u'你好': u'你也好~',
+    u'hi'  : u'hi~',
+    u'在么': u'呵呵',
+    u'在不': u'在的~',
+    u'在吗': u'在的~',
+    u'再见': u'嗯. 再见!',
+    u'谢谢': u'不客气~',
+    u'天王盖地虎' : u'宝塔镇河妖',
+    u'哈哈': u'你笑啥呢?',
+    u'呵呵': u'好吧...呵呵...',
+    u'怎么': u'我也不懂.',
+    u'知道么': u'我也不知道',
+    u'你傻': u'你才傻呢, 你们全家都傻!',
+    u'笨蛋': u'你才笨蛋呢, 你们全家都是!',
+    u'noah': u'恩.. noah上线吧~',
+    u'测试': u'测试不到位... OP只能继续苦逼',
+    u'你不是人': u'你才不是人呢, 你们都不是人',
+    u'太高端了': u'哈...谢谢夸奖...',
+    }
+
 class BaiduHi(object):
     """BaiduHi Client"""
     def __init__(self, username, password, logger=logger):
@@ -79,6 +100,12 @@ class BaiduHi(object):
         self._seq = 0
         self._apidata = dict()
         self._pickack = ''
+        self._answer_map = __default_answer_map__.copy()
+        self._default_handler = None # TODO
+        # handler
+        self.registerKeyword('time', do_time, withColon=False)
+        self.registerKeyword('help', self.handleHelp, withColon=False)
+        self.registerKeyword('about', do_about, withColon=False)
 
     @property
     def seq(self):
@@ -175,6 +202,9 @@ class BaiduHi(object):
             if ret['result'] == 'kicked':
                 self.log.error('Kicked by system!')
                 raise SystemExit
+            elif ret['result'] == 'networkerror':
+                self.log.fatal('Network error')
+                raise SystemExit
             else:
                 self.log.error('Pick() error: %s', ret)
         if ret['content']:      # if has content
@@ -193,12 +223,11 @@ class BaiduHi(object):
             cnt = field['content']
             income = msgfmt.parserJsonMessage(cnt).strip()
             self.log.info('Message from <uid:%s>: %s', sender, income)
-            reply = getAnswerByQuestion(income, sender=field['from']) or None
+            reply = self.getAnswerByQuestion(income, sender=field['from']) or None
             if reply is None:
                 return
-            self.log.info('Message reply <uid:%s>: %s', sender, reply.rawString())
-            self._apiReqest('message', method='POST', extraData={'from': self.username},
-                            messageid=self._seq, to=sender, body=unicode(reply))
+            # self.log.info('Message reply <uid:%s>: %s', sender, reply.rawString())
+            self.sendMessage(sender, reply)
 
         elif field['command'] == 'groupmessage':
             # group msg has a {content: {content: {}}} structure
@@ -207,13 +236,15 @@ class BaiduHi(object):
             gid = cnt['gid']
             income = msgfmt.parserJsonMessage(cnt['content']).strip()
             self.log.info('Group message from %s@%s: %s', sender, gid, income)
-            reply = getAnswerByQuestion(income, sender=cnt['from'], gid=cnt['gid']) or None
+            reply = self.getAnswerByQuestion(income, sender=cnt['from'], gid=cnt['gid']) or None
             if reply is None:
                 return
-            self.log.info('Group message reply %s@%s: %s', sender, gid, reply.rawString())
-            self._apiReqest('groupmessage', method='POST', extraData={'from': self.username},
-                                  messageid=self._seq, gid=cnt['gid'], body=unicode(reply))
-            
+            self.sendGroupMessage(cnt['gid'], reply)
+            #self.log.info('Group message reply %s@%s: %s', sender, gid, reply.rawString())
+            #self._apiReqest('groupmessage', method='POST', extraData={'from': self.username},
+            #                      messageid=self._seq, gid=cnt['gid'], body=unicode(reply))
+
+
         elif field['command'] == 'activity':
             # print u'动态消息', field
             self.log.info('Activity Update: %s', field)
@@ -237,7 +268,7 @@ class BaiduHi(object):
 
         elif field['command'] == 'addgroupmembernotify':
             #print u'添加群成员后的通知'
-            #{u'content': {u'memberList': [{u'username': u'fledna'}], u'gid': u'1368022', 
+            #{u'content': {u'memberList': [{u'username': u'fledna'}], u'gid': u'1368022',
             # u'managerName': u'andelf', u'time': 1335687504}, u'command': u'addgroupmembernotify', u'result': u'ok'}
             self.log.info("Added to <gid:%s> by %s", field['content']['gid'], field['content']['managerName'])
         elif field['command'] == 'deletegroupmembernotify':
@@ -273,6 +304,20 @@ class BaiduHi(object):
         else:
             print field['command'], 'unhandled'
             print field
+
+    def sendMessage(self, to, msg):
+        self.log.info('Send message <uid:%s>: %s', to, msg.rawString())
+        ret = self._apiReqest('message', method='POST', extraData={'from': self.username},
+                              messageid=self._seq, to=to, body=unicode(msg))
+        if ret['result'] != 'ok':
+            self.log.error('sendMessage fail: %s', ret)
+
+    def sendGroupMessage(self, to, msg):
+        self.log.info('Send group message <gid:%s>: %s', to, msg.rawString())
+        ret = self._apiReqest('groupmessage', method='POST', extraData={'from': self.username},
+                              messageid=self._seq, gid=to, body=unicode(msg))
+        if ret['result'] != 'ok':
+            self.log.error('sendGroupMessage fail: %s', ret)
 
     def logout(self):
         self.log.info("Logout called.")
@@ -368,7 +413,12 @@ class BaiduHi(object):
             body = urllib.urlencode(data)
             req = urllib2.Request(url, data=body)
         start = time.time()
-        ret = self._opener.open(req)
+        try:
+            ret = self._opener.open(req)
+        except Exception, e:
+            self.log.fatal('Api request error: url=%s error=%s', url, e)
+            # make it {result: xxx}
+            return dict(result='networkerror')
         raw = ret.read()
         try:
             data = json.loads(raw)
@@ -379,67 +429,121 @@ class BaiduHi(object):
         return data
 
     def tick(self):
+        """tick: heartbeat & msg pull"""
         try:
             self.pick()
         except httplib.HTTPException, e:
             self.log.error('http exception: %s', e)
+        except socket.error, e:
+            self.log.error('socket error: %s', e)
         time.sleep(1)
 
-
-def getAnswerByQuestion(income, sender, gid=None):
-    time.sleep(1.0)
-    msg = msgfmt.Message(fontname=u'黑体', bold=False, size=11, color=0x6B4C3F)
-    answer_map = {
-        u'你好': u'你也好~',
-        u'hi'  : u'hi~',
-        u'在么': u'呵呵',
-        u'在吗': u'在的~',
-        u'再见': u'嗯. 再见!',
-        u'谢谢': u'不客气~',
-        u'天王盖地虎' : u'宝塔镇河妖',
-        u'哈哈': u'你笑啥呢?',
-        u'呵呵': u'好吧...呵呵...',
-        u'怎么': u'我也不懂.',
-        u'知道么': u'我也不知道',
-        u'你傻': u'你才傻呢, 你们全家都傻!',
-        u'笨蛋': u'你才笨蛋呢, 你们全家都是!',
-        }
-    
-    #default = ''''VSOP 相关事务请查阅
-    ret = None
-    for word in answer_map:
-        if word in income.lower():
-            ret = answer_map[word]
-            break
-
-    if gid:                     # if group message
-        if '@vsop_help' in income:
-            msg.reply(sender, income.replace('\n', ' ').replace('\r', ''))
-            msg.text('\n')
-            if ret is None:
-                ret = u'测试机器人自动回复.'
-            msg.text(ret)
-            
-            return msg
-        else:
+    def getAnswerByQuestion(self, income, sender, gid=None):
+        time.sleep(0.1)         # sync wait
+        ret = None
+        for keyword in self._answer_map:
+            if keyword in income.lower():
+                ret = self._answer_map[keyword]
+                # if is a function
+                if callable(ret):
+                    # func(income:unicode, sender:unicode, gid:int)
+                    ret = ret(income, sender, gid, )
+                break
+        if ret is None:
+            if callable(self._default_handler):
+                return self._default_handler(income, sender, gid)
             return None
-        
-    if ret:
+        # a group msg, but not to me
+        if gid and (u'@' + self.username) not in income:
+            return None
+        # if already a Message Object, directy return
+        if isinstance(ret, msgfmt.Message):
+            return ret
+        msg = msgfmt.Message(fontname=u'黑体', bold=False, size=11, color=0x6B4C3F)
+        if gid:
+            msg.reply(sender, income.replace('\n', ' ').replace('\r', ''))
+            msg.text(u'\n')
         msg.text(ret)
-    else:
-        return None
-        
-    #msg.md5img('0D01966D3517836037E24B74C44304C7', 'jpg')
+        return msg
+
+    def registerKeyword(self, keyword, handleFunction, withColon=True):
+        assert keyword.replace(':', '').isalnum()
+        assert keyword.islower()
+        if withColon and not keyword.endswith(':'):
+            keyword = keyword + u':'
+        self._answer_map[keyword] = handleFunction
+
+    def unregisterKeyword(self, keyword):
+        if keyword in self._answer_map:
+            del self._answer_map[keyword]
+        keyword = keyword + u':'
+        if keyword in self._answer_map:
+            del self._answer_map[keyword]
+
+    def registerDefault(self, handler):
+        self._default_handler = handler
+
+    def handleHelp(self, income, sender, gid):
+        u"""显示帮助信息."""
+        words = []
+        funcs = []
+        for k, v in self._answer_map.items():
+            if isinstance(v, (unicode, str, basestring, msgfmt.Message)):
+                words.append(k)
+            elif callable(v):
+                funcs.append((k, v))
+        funcs_doc = [u"%s -> %s" % (name, func.__doc__) for name, func in funcs]
+        doc = u"""====聊天机器人帮助====
+直接对话就可以激活我。群聊天请使用Hi的回复功能或者 @ 我。
+{匹配回复}：
+%s
+{功能调用}：
+%s""" % (u', '.join(words[::-1]), u'\n'.join(funcs_doc))
+        msg = msgfmt.Message(fontname=u'黑体', bold=False, size=11, color=0x3C1FD0)
+        #msg.face(u"花痴")
+        msg.cface('b80439620592368b0874e7a7b3442059', 'jpg')
+        msg.text(u'你好, 我是小丫~~~')
+        msg.text(u'\n')
+        #msg.face(u"疑问")
+        msg.text(doc)
+
+        return msg
+
+def stripKeyword(income, keyword='time:'):
+    income = income.replace(keyword, '$$$').split('$$$')[-1].strip()
+    # .encode('gb18030')
+    return income
+
+def do_time(income, sender, gid):
+    u"""显示当前日期时间."""
+    question = stripKeyword(income, 'time:')
+    return unicode(time.strftime("%Y年%m月%d日 %H:%M:%S"), 'utf-8')
+
+def do_about(income, sender, gid):
+    u"""显示机器人关于信息."""
+    msg = msgfmt.Message(fontname=u'黑体', bold=False, size=11, color=0x3C1FD0)
+    msg.cface('b80439620592368b0874e7a7b3442059', 'jpg')
+    msg.text(u"关于小丫……")
+    msg.text(u'\n')
+    msg.text(u'''姓名：小丫
+性别：不祥
+年龄：不祥
+爱好：瞎扯淡
+协议：WebHi
+版本：v0.2
+作者：andelf''')
     return msg
 
-            # # 0xff0000 -> blue
-            # # 0x00ff00 -> green
-            # # 0x0000ff -> red
-            # if reply is None:
-            #     return
-            # self.log.info('Message reply <uid:%s>: %s', sender, reply)
-            # msg = msgfmt.Message(fontname=u'黑体', bold=True, size=12, color=0x6B4C3F)
-            # msg.text(reply)
+
+#msg.md5img('0D01966D3517836037E24B74C44304C7', 'jpg')
+# # 0xff0000 -> blue
+# # 0x00ff00 -> green
+# # 0x0000ff -> red
+# if reply is None:
+#     return
+# self.log.info('Message reply <uid:%s>: %s', sender, reply)
+# msg = msgfmt.Message(fontname=u'黑体', bold=True, size=12, color=0x6B4C3F)
+# msg.text(reply)
 
 
 
@@ -450,4 +554,4 @@ def getAnswerByQuestion(income, sender, gid=None):
 #http://file.im.baidu.com/crossdomain.xml
 #Referer:http://web.im.baidu.com/resources/common/flashes/upload_pic.swf
 
-#client._apiReqest('modifyself', comment='Under Robot Mode.')        
+#client._apiReqest('modifyself', comment='Under Robot Mode.')

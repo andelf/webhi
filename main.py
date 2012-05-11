@@ -5,7 +5,7 @@
 #  Created     : Fri Apr 13 21:04:22 2012 by Feather.et.ELF
 #  Copyright   : Feather Workshop (c) 2012
 #  Description : Baidu hi client
-#  Time-stamp: <2012-05-10 21:00:10 andelf>
+#  Time-stamp: <2012-05-11 22:20:59 andelf>
 
 
 import lib
@@ -45,16 +45,23 @@ if __name__ == '__main__':
 
     client = lib.BaiduHi(args.username, args.password)
 
-    if not client.login():      # if login fail
-        raise RuntimeError('Login fail!')
+    # def handleCMD(income, sender, gid):
+    #     u"""这里是测试帮助"""
+    #     return u'你输入的是: %s, sender=%s, gid=%s' % (income, sender, gid)
+
+    # client.registerKeyword('foobar', handleCMD, withColon=False)
+
+    # if not client.login():      # if login fail
+    #     raise RuntimeError('Login fail!')
 
     atexit.register(lambda : client.logout())
     client.init()
     hi = HiThread()
     hi.client = client
     hi.client._apiReqest('modifyself', comment=u'IM 机器人服务中.')
-
     hi.start()
+
+    #client.registerKeyword(
     #import msgfmt
     #def cb(txt):
     #    msg = msgfmt.Message()

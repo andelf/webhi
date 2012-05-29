@@ -5,7 +5,7 @@
 #  Created     : Fri Apr 13 21:04:22 2012 by Feather.et.ELF
 #  Copyright   : Feather Workshop (c) 2012
 #  Description : Baidu hi client
-#  Time-stamp: <2012-05-11 22:20:59 andelf>
+#  Time-stamp: <2012-05-29 18:58:00 wangshuyu>
 
 
 import lib
@@ -14,6 +14,10 @@ import argparse
 import atexit
 import time
 import threading
+import urllib2
+import urllib
+import json
+import msgfmt
 
 
 class HiThread(threading.Thread):
@@ -21,7 +25,9 @@ class HiThread(threading.Thread):
     daemon = False
     client = None
     running_flag = True
-
+    def __init__(self, client):
+        threading.Thread.__init__(self)
+        self.client = client
     def run(self, *args, **kwargs):
         client = self.client or None
         if client is None:
@@ -45,32 +51,21 @@ if __name__ == '__main__':
 
     client = lib.BaiduHi(args.username, args.password)
 
-    # def handleCMD(income, sender, gid):
-    #     u"""这里是测试帮助"""
-    #     return u'你输入的是: %s, sender=%s, gid=%s' % (income, sender, gid)
+    # register
+    #client.registerKeyword('http', do_http)
+    #client.registerKeyword('deploy.query', do_deploy_query)
+    #client.registerKeyword('deploy.goon:', do_deploy_goon)
+    #client.registerKeyword('deploy.stop:', do_deploy_stop)
 
-    # client.registerKeyword('foobar', handleCMD, withColon=False)
-
-    # if not client.login():      # if login fail
-    #     raise RuntimeError('Login fail!')
+    if not client.login():      # if login fail
+        raise RuntimeError('Login fail!')
 
     atexit.register(lambda : client.logout())
     client.init()
-    hi = HiThread()
-    hi.client = client
+    hi = HiThread(client)
     hi.client._apiReqest('modifyself', comment=u'IM 机器人服务中.')
     hi.start()
 
-    #client.registerKeyword(
-    #import msgfmt
-    #def cb(txt):
-    #    msg = msgfmt.Message()
-    #    msg.text(txt)
-    #    client.sendGroupMessage(1371380, msg)
-
-    #sys.path.append('../baidu')
-    #import deploy_monitor
-    #deploy_monitor.dp.loop(10, callback=cb)
 
     while 1:
         try:

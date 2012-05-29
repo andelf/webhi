@@ -23,7 +23,6 @@ import socket
 socket.setdefaulttimeout(40)    # 40s
 import msgfmt
 
-
 def randomstr(n=10):
     seeds = string.lowercase + string.digits
     return ''.join(random.sample(seeds, n))
@@ -45,9 +44,8 @@ def timechecksum():
 logger = logging.getLogger('BaiduHi')
 #logger.setLevel(logging.DEBUG)
 logger.setLevel(logging.INFO)
-# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-formatter = logging.Formatter('%(asctime)s:%(levelname)s (%(name)s) %(message)s',
-                              datefmt='%Y-%m-%d %H:%M:%S')
+formatter = logging.Formatter('%(levelname)s: %(asctime)s: %(name)s * %(thread)d %(message)s',
+                              datefmt='%m-%d %H:%M:%S')
 
 ch = logging.StreamHandler()
 ch.setFormatter(formatter)
@@ -103,9 +101,9 @@ class BaiduHi(object):
         self._answer_map = __default_answer_map__.copy()
         self._default_handler = None # TODO
         # handler
-        self.registerKeyword('time', do_time, withColon=False)
-        self.registerKeyword('help', self.handleHelp, withColon=False)
-        self.registerKeyword('about', do_about, withColon=False)
+        self.registerKeyword('time', do_time)
+        self.registerKeyword('help', self.handleHelp)
+        self.registerKeyword('about', do_about)
 
     @property
     def seq(self):
@@ -311,6 +309,7 @@ class BaiduHi(object):
                               messageid=self._seq, to=to, body=unicode(msg))
         if ret['result'] != 'ok':
             self.log.error('sendMessage fail: %s', ret)
+        return ret
 
     def sendGroupMessage(self, to, msg):
         self.log.info('Send group message <gid:%s>: %s', to, msg.rawString())
@@ -318,6 +317,7 @@ class BaiduHi(object):
                               messageid=self._seq, gid=to, body=unicode(msg))
         if ret['result'] != 'ok':
             self.log.error('sendGroupMessage fail: %s', ret)
+        return ret
 
     def logout(self):
         self.log.info("Logout called.")
@@ -390,7 +390,7 @@ class BaiduHi(object):
             self.log.info('Verify code pic download ok! `./pic.png`')
         return raw_input('plz input code:').strip()
 
-    def _apiReqest(self, api, method='GET', extraData=dict(), **params):
+    def _apiReqest(self, api, method='GET', extraData=dict(), _retryLimit=2, **params):
         url = urlparse.urljoin('http://web.im.baidu.com/', api)
         data = self._apidata.copy()
         data.update(extraData)
@@ -416,9 +416,14 @@ class BaiduHi(object):
         try:
             ret = self._opener.open(req)
         except Exception, e:
-            self.log.fatal('Api request error: url=%s error=%s', url, e)
-            # make it {result: xxx}
-            return dict(result='networkerror')
+            if _retryLimit == 0:
+                self.log.fatal('Api request error: url=%s error=%s', url, e)
+                # make it {result: xxx}
+                return dict(result='networkerror')
+            else:
+                _retryLimit -= 1
+                self.log.error('Api request error, retry!')
+                return self._apiReqest(api, method, extraData, _retryLimit, **params)
         raw = ret.read()
         try:
             data = json.loads(raw)
@@ -441,8 +446,10 @@ class BaiduHi(object):
     def getAnswerByQuestion(self, income, sender, gid=None):
         time.sleep(0.1)         # sync wait
         ret = None
+        stripped_income = income.replace(u'@' + self.username, '').strip().lower()
         for keyword in self._answer_map:
-            if keyword in income.lower():
+            #if keyword in income.lower():
+            if stripped_income.startswith(keyword):
                 ret = self._answer_map[keyword]
                 # if is a function
                 if callable(ret):
@@ -466,8 +473,9 @@ class BaiduHi(object):
         msg.text(ret)
         return msg
 
-    def registerKeyword(self, keyword, handleFunction, withColon=True):
-        assert keyword.replace(':', '').isalnum()
+    def registerKeyword(self, keyword, handleFunction, withColon=False):
+        assert keyword.replace(':', '').replace('.', '').isalnum()
+        assert keyword.count('.') <= 1
         assert keyword.islower()
         if withColon and not keyword.endswith(':'):
             keyword = keyword + u':'
@@ -533,7 +541,6 @@ def do_about(income, sender, gid):
 版本：v0.2
 作者：andelf''')
     return msg
-
 
 #msg.md5img('0D01966D3517836037E24B74C44304C7', 'jpg')
 # # 0xff0000 -> blue

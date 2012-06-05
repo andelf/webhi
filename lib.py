@@ -98,12 +98,15 @@ class BaiduHi(object):
         self._seq = 0
         self._apidata = dict()
         self._pickack = ''
+        self._lastMessageTimestamp = 0
+
         self._answer_map = __default_answer_map__.copy()
         self._default_handler = None # TODO
         # handler
         self.registerKeyword('time', do_time)
         self.registerKeyword('help', self.handleHelp)
         self.registerKeyword('about', do_about)
+
 
     @property
     def seq(self):
@@ -305,18 +308,25 @@ class BaiduHi(object):
 
     def sendMessage(self, to, msg):
         self.log.info('Send message <uid:%s>: %s', to, msg.rawString())
+        if time.time() - self._lastMessageTimestamp < 1.0:
+            time.sleep(1)
         ret = self._apiReqest('message', method='POST', extraData={'from': self.username},
-                              messageid=self._seq, to=to, body=unicode(msg))
+                              to=to, body=unicode(msg), friend='true')
+                              #messageid=self._seq, to=to, body=unicode(msg), friend='true',)
         if ret['result'] != 'ok':
             self.log.error('sendMessage fail: %s', ret)
+        self._lastMessageTimestamp = time.time()
         return ret
 
     def sendGroupMessage(self, to, msg):
         self.log.info('Send group message <gid:%s>: %s', to, msg.rawString())
+        if time.time() - self._lastMessageTimestamp < 1.0:
+            time.sleep(1)
         ret = self._apiReqest('groupmessage', method='POST', extraData={'from': self.username},
-                              messageid=self._seq, gid=to, body=unicode(msg))
+                              messageid='', gid=to, body=unicode(msg))
         if ret['result'] != 'ok':
             self.log.error('sendGroupMessage fail: %s', ret)
+        self._lastMessageTimestamp = time.time()
         return ret
 
     def logout(self):

@@ -3,6 +3,7 @@
 
 
 import os
+import sys
 import urllib
 import urllib2
 import httplib
@@ -22,6 +23,10 @@ except ImportError:
 import socket
 socket.setdefaulttimeout(40)    # 40s
 import msgfmt
+
+__encoding__ = sys.getdefaultencoding()
+if os.name == 'nt':
+    __encoding__ = 'gbk'
 
 def randomstr(n=10):
     seeds = string.lowercase + string.digits
@@ -456,7 +461,7 @@ class BaiduHi(object):
     def getAnswerByQuestion(self, income, sender, gid=None):
         time.sleep(0.1)         # sync wait
         ret = None
-        stripped_income = income.replace(u'@' + self.username, '').strip().lower()
+        stripped_income = income.replace(u'@' + unicode(self.username, __encoding__), '').strip().lower()
         for keyword in self._answer_map:
             #if keyword in income.lower():
             if stripped_income.startswith(keyword):

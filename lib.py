@@ -45,6 +45,9 @@ def radix(n, base=36):
 def timechecksum():
     return radix(timestamp())
 
+def login_time(l):
+    return (l + random.randint(1,l))*500 + random.randint(1,1000)
+
 # init logger
 logger = logging.getLogger('BaiduHi')
 #logger.setLevel(logging.DEBUG)
@@ -165,6 +168,7 @@ class BaiduHi(object):
         params = data.copy()
         params['username'] = self.username
         params['password'] = self.password
+        params['ppui_logintime'] = login_time(len(params['username'] + params['password']))
         params['verifycode'] = verifycode
         params['safeflg'] = '0' # 1 -> True
         params['mem_pass'] = 'on'

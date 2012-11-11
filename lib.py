@@ -142,8 +142,6 @@ class BaiduHi(object):
         self._opener.open(req).read()
 
         req = urllib2.Request('https://passport.baidu.com/v2/api/?getapi&class=login&tpl=mn&tangram=false')
-        #req = urllib2.Request('http://passport.baidu.com/v2/api/?login&tpl=mn&time=%d' % timestamp())
-        #data = self._opener.open(req).read().strip()[1:-1] # remove brackets
         html = self._opener.open(req).read()
         token = re.findall(r"login_token\s*=\s*'([^']+)", html)[0]
         if not re.match('^[0-9a-zA-Z]+$', token):
@@ -164,20 +162,6 @@ class BaiduHi(object):
         if data['codestring'] != '':
             verifycode = self.getVerifyCode(data['codestring'])
 
-        #data = eval(data, type('Dummy', (dict,), dict(__getitem__=lambda s,n:n))())
-        #if int(data['error_no']) != 0:
-        #    # FATAL error
-        #    self.log.fatal('Login passport error: %s', data)
-        #    return False
-        #param_out = data['param_out']
-        #param_in = data['param_in']
-        #params = dict([(v, param_out[k.replace('name', 'contex')]) \
-        #              for k, v in param_out.items() \
-        #              if k.endswith('_name')])
-        #params.update(dict([(v, param_in[k.replace('name', 'value')]) \
-        #                   for k, v in param_in.items() \
-        #                   if k.endswith('_name')]))
-        #self.log.debug('Login params: %s', params)
         params = data.copy()
         params['username'] = self.username
         params['password'] = self.password

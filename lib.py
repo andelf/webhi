@@ -131,8 +131,6 @@ class BaiduHi(object):
         ret.read()
         ret = self._apiReqest('check', v=30, time=timechecksum())
         if ret['result'] == 'ok':
-            import pdb
-            pdb.set_trace()
             self._cookiejar.save()
             # self.password = None
             return True

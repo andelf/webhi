@@ -45,6 +45,9 @@ def radix(n, base=36):
 def timechecksum():
     return radix(timestamp())
 
+def login_time(l):
+    return (l + random.randint(1,l))*500 + random.randint(1,1000)
+
 # init logger
 logger = logging.getLogger('BaiduHi')
 #logger.setLevel(logging.DEBUG)
@@ -137,33 +140,48 @@ class BaiduHi(object):
         elif stage >= 2:
             return False
         assert ret['result'] == 'offline'
-        req = urllib2.Request('http://passport.baidu.com/api/?login&tpl=mn&time=%d' % timestamp())
+
+        req = urllib2.Request('https://passport.baidu.com/v2/api/?getapi&class=login&tpl=mn&tangram=false') # get BAIDUID cookie
+        self._opener.open(req).read()
+
+        req = urllib2.Request('https://passport.baidu.com/v2/api/?getapi&class=login&tpl=mn&tangram=false')
+        html = self._opener.open(req).read()
+        token = re.findall(r"login_token\s*=\s*'([^']+)", html)[0]
+        if not re.match('^[0-9a-zA-Z]+$', token):
+            self.log.fatal('Get passport token error: %s', token)
+            return False
+
+        self.log.debug('Login token: %s', token)
+
+        req = urllib2.Request('https://passport.baidu.com/v2/api/?logincheck&tpl=mn&charset=UTF-8&index=0&username=%s&time=%s' % (self.username, timestamp()))
         data = self._opener.open(req).read().strip()[1:-1] # remove brackets
         data = eval(data, type('Dummy', (dict,), dict(__getitem__=lambda s,n:n))())
-        if int(data['error_no']) != 0:
+        if int(data['errno']) != 0:
             # FATAL error
             self.log.fatal('Login passport error: %s', data)
             return False
-        param_out = data['param_out']
-        param_in = data['param_in']
-        params = {v: param_out[k.replace('name', 'contex')] \
-                      for k, v in param_out.items() \
-                      if k.endswith('_name')}
-        params.update({v: param_in[k.replace('name', 'value')] \
-                           for k, v in param_in.items() \
-                           if k.endswith('_name')})
-        self.log.debug('Login params: %s', params)
+
+        verifycode = ''
+        if data['codestring'] != '':
+            verifycode = self.getVerifyCode(data['codestring'])
+
+        params = data.copy()
         params['username'] = self.username
         params['password'] = self.password
-        params['safeflg'] = '' # 1 -> True
+        params['ppui_logintime'] = login_time(len(params['username'] + params['password']))
+        params['verifycode'] = verifycode
+        params['safeflg'] = '0' # 1 -> True
         params['mem_pass'] = 'on'
-        if int(params['verifycode']) == 1:
-            # neet verify code
-            params['verifycode'] = self.getVerifyCode()
-        # 似乎第一次登陆总会失败
-        params['staticpage'] = 'http://web.im.baidu.com/popup/src/login_jump.htm'
+        params['charset'] = 'UTF-8'
+        params['token'] = token
+        params['isPhone'] = 'false'
+        params['u'] = ''
+        params['mem_pass'] = 'on'
+        params['staticpage'] = 'http://web.im.baidu.com/popup/src/v2Jump.html'
+        params['loginType'] = '1'
+        params['tpl'] = 'mn'
         self.log.debug('Login Params after filling: %s', params)
-        req = urllib2.Request('https://passport.baidu.com/api/?login',
+        req = urllib2.Request('https://passport.baidu.com/v2/api/?login',
                               data=urllib.urlencode(params))
         html = self._opener.open(req).read()
         url = re.findall(r"encodeURI\('(.*?)'\)", html)[0]
@@ -395,9 +413,10 @@ class BaiduHi(object):
             self.log.error('Delete friend <uid:%s> failed: %s', username, ret)
         return False
 
-    def getVerifyCode(self):
+    def getVerifyCode(self, codestring):
         """验证码处理"""
-        url = 'https://passport.baidu.com/?verifypic&t=%d' % timestamp()
+        #url = 'https://passport.baidu.com/?verifypic&t=%d' % timestamp()
+        url = 'https://passport.baidu.com/cgi-bin/genimage?%s&v=%s' % (codestring, timestamp())
         req = urllib2.Request(url)
         data = self._opener.open(req).read()
         with open('./pic.png', 'wb') as fp:
@@ -577,3 +596,5 @@ def do_about(income, sender, gid):
 #Referer:http://web.im.baidu.com/resources/common/flashes/upload_pic.swf
 
 #client._apiReqest('modifyself', comment='Under Robot Mode.')
+
+# vim: se ts=4 sw=4 et :

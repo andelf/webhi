@@ -138,6 +138,7 @@ class BaiduHi(object):
             # self.password = None
             return True
         elif stage >= 2:
+            logging.fatal(ret)
             return False
         assert ret['result'] == 'offline'
 
@@ -153,19 +154,24 @@ class BaiduHi(object):
 
         self.log.debug('Login token: %s', token)
 
-        req = urllib2.Request('https://passport.baidu.com/v2/api/?logincheck&tpl=mn&charset=UTF-8&index=0&username=%s&time=%s' % (self.username, timestamp()))
-        data = self._opener.open(req).read().strip()[1:-1] # remove brackets
-        data = eval(data, type('Dummy', (dict,), dict(__getitem__=lambda s,n:n))())
-        if int(data['errno']) != 0:
-            # FATAL error
-            self.log.fatal('Login passport error: %s', data)
+        url = 'https://passport.baidu.com/v2/api/?logincheck&token=%s&tpl=mn&apiver=v3&tt=%s&username=%s&isphone=false&callback=' % (token, timestamp(), self.username)
+        req = urllib2.Request(url)
+        data = self._opener.open(req).read().strip() # remove brackets
+
+        self.log.debug("logincheck returns:" + data)
+
+        # format of data: {u'data': {u'codeString': u'', u'vcodetype': u''}, u'errInfo': {u'no': u'0'}}
+        data = json.loads(data)
+        self.log.info(data)
+        if 0 != int(data[u"errInfo"][u"no"]):
+            self.log.fatal('Login passport error: %s', str(data))
             return False
 
         verifycode = ''
-        if data['codestring'] != '':
-            verifycode = self.getVerifyCode(data['codestring'])
+        if data[u"data"][u'codeString'] != '':
+            verifycode = self.getVerifyCode(data[u"data"][u'codeString'])
 
-        params = data.copy()
+        params = data[u"data"].copy()
         params['username'] = self.username
         params['password'] = self.password
         params['ppui_logintime'] = login_time(len(params['username'] + params['password']))
